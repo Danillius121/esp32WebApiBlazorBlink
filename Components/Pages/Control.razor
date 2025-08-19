@@ -1,0 +1,103 @@
+﻿@page "/control"
+@inject IHttpClientFactory HttpClientFactory
+@rendermode RenderMode.InteractiveServer
+<h3>Управление светодиодом ESP32</h3>
+
+<div class="form-group">
+    <input type="number" step="0.1" min="0.1" max="10"
+           @bind="currentPeriod" @bind:event="oninput" />
+
+    <button class="btn btn-primary" 
+            @onclick="@(() => HandleButtonClick())" type="button">
+        Обновить
+    </button>
+</div>
+
+<!-- Блок визуальной отладки -->
+<div class="debug-info mt-3 p-3 border rounded">
+    <h5>Отладочная информация:</h5>
+
+    <div class="mb-2">
+        <strong>Статус кнопки:</strong>
+        <span class="@(buttonClicked ? "text-success" : "text-muted")">
+            @(buttonClicked ? "НАЖАТА" : "не нажата")
+        </span>
+    </div>
+
+    <div class="mb-2">
+        <strong>Счётчик нажатий:</strong> @clickCounter
+    </div>
+
+    <div class="mb-2">
+        <strong>Последнее действие:</strong> @lastAction
+    </div>
+
+    <div class="mb-2">
+        <strong>Текущее значение:</strong> @currentPeriod.ToString("0.0##")s
+    </div>
+
+    <div class="alert alert-info mt-2">
+        @statusMessage
+    </div>
+</div>
+
+@code {
+    private float currentPeriod = 1.0f;
+    private string statusMessage = "Готово к работе";
+    private string lastAction = "Никаких действий";
+    private bool buttonClicked = false;
+    private int clickCounter = 0;
+    private HttpClient _http;
+
+    protected override void OnInitialized()
+    {
+        _http = HttpClientFactory.CreateClient("ServerAPI");
+    }
+
+    private async Task HandleButtonClick()
+    {
+        // Визуальная индикация нажатия
+        buttonClicked = true;
+        clickCounter++;
+        lastAction = $"Кнопка нажата {clickCounter} раз(а) в {DateTime.Now.ToString("HH:mm:ss")}";
+        statusMessage = "Обработка запроса...";
+        StateHasChanged();
+
+        // Искусственная задержка для визуализации
+        await Task.Delay(200);
+
+        try
+        {
+            // Отправка запроса
+            var response = await _http.PostAsJsonAsync("api/blink-period", currentPeriod);
+
+            if (response.IsSuccessStatusCode)
+            {
+                statusMessage = "Значение успешно обновлено!";
+                var result = await response.Content.ReadFromJsonAsync<PeriodResponse>();
+                currentPeriod = result?.period ?? currentPeriod;
+                lastAction = $"Успешное обновление в {DateTime.Now.ToString("HH:mm:ss")}";
+            }
+            else
+            {
+                statusMessage = $"Ошибка сервера: {response.StatusCode}";
+                lastAction = $"Ошибка при обновлении в {DateTime.Now.ToString("HH:mm:ss")}";
+            }
+        }
+        catch (Exception ex)
+        {
+            statusMessage = $"Ошибка: {ex.Message}";
+            lastAction = $"Исключение в {DateTime.Now.ToString("HH:mm:ss")}";
+        }
+        finally
+        {
+            buttonClicked = false;
+            StateHasChanged();
+        }
+    }
+
+    private class PeriodResponse
+    {
+        public float period { get; set; }
+    }
+}
